@@ -3,300 +3,382 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HNN vs 標準NN 3Dキャラクターデモ</title>
+    <title>HNN vs 標準NN 3D物理比較デモ</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', sans-serif;
+            margin: 0;
             overflow: hidden;
+            background-color: #111827;
         }
-        .info-box {
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+        .canvas-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        .label {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.875rem;
+            pointer-events: none;
+            z-index: 10;
         }
     </style>
 </head>
-<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
+<body class="text-white">
 
-    <div class="w-full max-w-6xl mx-auto text-center mb-4">
-        <h1 class="text-3xl md:text-4xl font-bold text-cyan-400 mb-2">3Dキャラクター物理デモ</h1>
-        <p class="text-gray-300">HNNと標準的なNNのマフラーの動きで安定性を比較</p>
-    </div>
-
-    <div class="w-full max-w-6xl grid grid-cols-1 md:grid-cols-2 gap-8 mb-4">
-        <!-- 標準的なNNのセクション -->
-        <div class="bg-gray-800 p-4 rounded-2xl shadow-lg border border-gray-700">
-            <h2 class="text-xl font-bold text-center mb-2 text-red-400">標準的なNN (シミュレーション)</h2>
-            <div id="nnContainer" class="w-full h-80 bg-gray-900 rounded-lg relative"></div>
+    <!-- メインレイアウト -->
+    <div class="flex flex-col h-screen p-4">
+        <!-- ヘッダー -->
+        <div class="text-center mb-4">
+            <h1 class="text-2xl md:text-3xl font-bold text-cyan-400">HNN vs 標準NN 3D物理比較</h1>
+            <p class="text-gray-400 text-sm md:text-base">物理法則（エネルギー保存）の学習がもたらす安定性の違い</p>
         </div>
 
-        <!-- HNNベースのエンジンのセクション -->
-        <div class="bg-gray-800 p-4 rounded-2xl shadow-lg border border-gray-700">
-            <h2 class="text-xl font-bold text-center mb-2 text-green-400">HNNベース (物理法則を学習)</h2>
-            <div id="hnnContainer" class="w-full h-80 bg-gray-900 rounded-lg relative"></div>
+        <!-- 3Dビューポートグリッド -->
+        <div class="flex-grow grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <!-- 左：標準NN (不安定) -->
+            <div class="canvas-container bg-gray-900 border border-red-900/30">
+                <div class="label bg-red-500/80 text-white">標準的なNN (物理法則の考慮なし)</div>
+                <div id="nnViewport" class="w-full h-full"></div>
+            </div>
+
+            <!-- 右：HNN (安定) -->
+            <div class="canvas-container bg-gray-900 border border-green-900/30">
+                <div class="label bg-green-500/80 text-white">HNNベース (物理法則を構造的に学習)</div>
+                <div id="hnnViewport" class="w-full h-full"></div>
+            </div>
         </div>
-    </div>
-    
-    <div class="flex items-center space-x-4">
-        <div class="relative">
-             <p id="infoText" class="text-gray-300 bg-gray-800/80 info-box p-4 rounded-lg border border-gray-700 max-w-lg text-center">
-                <strong class="text-cyan-400">WASDキー</strong>でキャラクターを操作してください。<br>左のNNは物理法則を知らないため、誤差が蓄積しマフラーが破綻します。
-            </p>
+
+        <!-- 操作説明と情報 -->
+        <div class="bg-gray-800/80 p-4 rounded-xl border border-gray-700 backdrop-blur-md flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex gap-4 items-center">
+                <kbd class="px-3 py-1 bg-gray-700 rounded border border-gray-600 font-bold">W</kbd>
+                <kbd class="px-3 py-1 bg-gray-700 rounded border border-gray-600 font-bold">A</kbd>
+                <kbd class="px-3 py-1 bg-gray-700 rounded border border-gray-600 font-bold">S</kbd>
+                <kbd class="px-3 py-1 bg-gray-700 rounded border border-gray-600 font-bold">D</kbd>
+                <span class="text-gray-300 text-sm">キーでキャラクターを移動。激しく動かして比較してください。</span>
+            </div>
+            <button onclick="resetSystems()" class="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg font-bold transition-colors">
+                位置をリセット
+            </button>
         </div>
     </div>
 
-    <!-- 3Dグラフィックスライブラリ Three.js を読み込む -->
+    <!-- Three.js ライブラリ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
     <script>
-        // --- 初期設定 ---
-        // 各シミュレーション用の変数を用意
-        let nnScene, nnCamera, nnRenderer, nnSystem, nnChar; // 標準NN用
-        let hnnScene, hnnCamera, hnnRenderer, hnnSystem, hnnChar; // HNN用
-        const keyState = {}; // キーボードの入力状態を保存するオブジェクト
+        /**
+         * 物理パラメータ
+         */
+        const PARAMS = {
+            gravity: new THREE.Vector3(0, -9.8, 0),
+            dt: 0.016, // フレームレート (60fps)
+            particles: 12, // マフラーの節の数
+            length: 0.3, // 節ごとの長さ
+            stiffness: 150, // 硬さ
+            moveSpeed: 8.0
+        };
 
-        // --- 物理パラメータ ---
-        const gravity = new THREE.Vector3(0, -10, 0); // 重力加速度
-        const dt = 0.016; // 1フレームあたりの時間ステップ (約60FPS)
-        const numParticles = 10; // マフラーを構成する点の数
-        const segmentLength = 0.5; // マフラーの各節の長さ
-        const stiffness = 200; // マフラーの硬さ（伸びにくさ）
+        let nnScene, hnnScene, nnCamera, hnnCamera, nnRenderer, hnnRenderer;
+        let nnChar, hnnChar, nnPhysics, hnnPhysics;
+        const keys = {};
 
-        // --- 3Dシーン初期化関数 ---
-        // 指定されたIDのDOM要素に3Dシーンを作成する
-        function init3D(containerId) {
-            const container = document.getElementById(containerId);
-            
-            // シーン: 3Dオブジェクトやライトを配置する空間
-            const scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x111827); // 背景色
-
-            // カメラ: 3D空間をどの視点から見るかを決める
-            const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
-            camera.position.set(0, 7, 12); // カメラの位置
-            camera.lookAt(0, 2, 0); // カメラの注視点
-
-            // レンダラー: シーンとカメラの情報をもとに、実際に画面に描画する
-            const renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(container.clientWidth, container.clientHeight); // 描画サイズ
-            renderer.setPixelRatio(window.devicePixelRatio); // 高解像度ディスプレイに対応
-            container.appendChild(renderer.domElement); // HTMLにcanvas要素を追加
-
-            // ライト: 物体を照らすための光源
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // 全体を均一に照らす光
-            scene.add(ambientLight);
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); // 特定の方向から照らす平行光
-            directionalLight.position.set(5, 10, 7.5);
-            scene.add(directionalLight);
-
-            // 床: キャラクターが立つ地面
-            const ground = new THREE.Mesh(
-                new THREE.PlaneGeometry(50, 50), // 形状 (50x50の平面)
-                new THREE.MeshStandardMaterial({ color: 0x374151 }) // 材質 (色など)
-            );
-            ground.rotation.x = -Math.PI / 2; // X軸を中心に90度回転させて水平にする
-            scene.add(ground);
-
-            // 作成した3点セットを返す
-            return { scene, camera, renderer };
-        }
-
-        // --- キャラクター作成 ---
-        // 簡単な人型モデルを作成する
-        function createCharacter(color) {
-            const group = new THREE.Group(); // 複数のオブジェクトをまとめるためのグループ
-            // 頭
-            const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 32, 32), new THREE.MeshStandardMaterial({ color }));
-            head.position.y = 3.5;
-            // 体
-            const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1.5, 0.5), new THREE.MeshStandardMaterial({ color }));
-            body.position.y = 2.25;
-            group.add(head);
-            group.add(body);
-            return group;
-        }
-
-        // --- 物理オブジェクト ---
-        // マフラーを構成する1つ1つの点を表現するクラス
+        /**
+         * 物理パーティクルクラス
+         */
         class Particle {
-            constructor(pos, isPinned = false) {
-                this.pos = pos.clone(); // 現在の位置
-                this.oldPos = pos.clone(); // 1フレーム前の位置 (Verlet法で使用)
-                this.vel = new THREE.Vector3(); // 速度 (オイラー法で使用)
-                this.acc = new THREE.Vector3(); // 加速度 (オイラー法で使用)
-                this.isPinned = isPinned; // 固定点かどうか (マフラーの付け根など)
-                this.mass = 0.1; // 質量
+            constructor(x, y, z, isPinned = false) {
+                this.pos = new THREE.Vector3(x, y, z);
+                this.oldPos = new THREE.Vector3(x, y, z);
+                this.vel = new THREE.Vector3(0, 0, 0);
+                this.acc = new THREE.Vector3(0, 0, 0);
+                this.isPinned = isPinned;
+                this.mass = 0.2;
             }
         }
 
-        // マフラー全体の物理演算を管理するクラス
-        class PhysicsSystem {
-            constructor(type, character) {
-                this.type = type; // 計算方法の種類 ('nn' or 'hnn')
-                this.character = character; // 追従対象のキャラクター
-                this.particles = []; // Particleオブジェクトの配列
-                this.constraints = []; // Particle間の接続情報（制約）
-                
-                // マフラーの線の色をタイプによって変える
-                const scarfMaterial = new THREE.LineBasicMaterial({ color: this.type === 'nn' ? 0xf87171 : 0x4ade80, linewidth: 5 });
-                this.scarfLine = new THREE.Line(new THREE.BufferGeometry(), scarfMaterial);
-                
-                // マフラーの初期形状を生成
-                const startPos = new THREE.Vector3(0, 3, 0.3); // 付け根の位置
-                for (let i = 0; i < numParticles; i++) {
-                    // 点をまっすぐ下に配置していく
-                    const pos = startPos.clone().add(new THREE.Vector3(0, -i * segmentLength, 0));
-                    // 最初の点(i=0)を固定点にする
-                    const particle = new Particle(pos, i === 0);
-                    this.particles.push(particle);
-                    // 2つ目以降の点で、1つ前の点との間に制約を作成
+        /**
+         * マフラー物理管理クラス
+         */
+        class ScarfSystem {
+            constructor(type, character, scene, color) {
+                this.type = type; // 'nn' (標準NN) か 'hnn' (HNN)
+                this.character = character;
+                this.particles = [];
+                this.constraints = [];
+
+                // 粒子の生成
+                for (let i = 0; i < PARAMS.particles; i++) {
+                    const p = new Particle(0, 3 - i * PARAMS.length, 0.4, i === 0);
+                    this.particles.push(p);
                     if (i > 0) {
-                        this.constraints.push({ p1: this.particles[i-1], p2: this.particles[i], length: segmentLength });
+                        this.constraints.push({ p1: this.particles[i-1], p2: this.particles[i], target: PARAMS.length });
                     }
                 }
-                
-                // 描画用の線の頂点データを準備
-                const positions = new Float32Array(numParticles * 3);
-                this.scarfLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+                // 表示用メッシュの作成
+                const geometry = new THREE.BufferGeometry();
+                const material = new THREE.LineBasicMaterial({ color: color, linewidth: 4 });
+                this.line = new THREE.Line(geometry, material);
+                scene.add(this.line);
+
+                this.updateGeometry();
             }
 
-            // 毎フレーム呼び出される更新処理
+            // ジオメトリ（見た目）の更新
+            updateGeometry() {
+                const positions = new Float32Array(this.particles.length * 3);
+                for (let i = 0; i < this.particles.length; i++) {
+                    positions[i*3] = this.particles[i].pos.x;
+                    positions[i*3+1] = this.particles[i].pos.y;
+                    positions[i*3+2] = this.particles[i].pos.z;
+                }
+                this.line.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                this.line.geometry.attributes.position.needsUpdate = true;
+            }
+
+            // 物理シミュレーションの更新
             update() {
-                // 先頭の固定点をキャラクターの首元に追従させる
-                this.particles[0].pos.copy(this.character.position).add(new THREE.Vector3(0, 3, 0.3));
-                
-                // タイプに応じて計算方法を切り替える
-                if (this.type === 'nn') this.updateNN();
-                else this.updateHNN();
+                // 先頭を首に固定
+                const neckPos = this.character.position.clone().add(new THREE.Vector3(0, 2.8, 0.4));
+                this.particles[0].pos.copy(neckPos);
 
-                // 計算結果を線のジオメトリに反映させる
-                const positions = this.scarfLine.geometry.attributes.position.array;
-                for (let i = 0; i < numParticles; i++) {
-                    positions[i * 3] = this.particles[i].pos.x;
-                    positions[i * 3 + 1] = this.particles[i].pos.y;
-                    positions[i * 3 + 2] = this.particles[i].pos.z;
+                if (this.type === 'nn') {
+                    this.updateEuler(); // 標準NN (不安定なオイラー積分を模擬)
+                } else {
+                    this.updateVerlet(); // HNN (安定したVerlet積分/ハミルトン系を模擬)
                 }
-                this.scarfLine.geometry.attributes.position.needsUpdate = true; // Three.jsにジオメトリの更新を通知
+                this.updateGeometry();
             }
 
-            // 標準NNのシミュレーション（オイラー法）
-            // 物理法則を知らないNNが動きを予測した結果を模倣。誤差が蓄積しやすい。
-            updateNN() {
-                // 1. 各点に重力を適用
-                for (const p of this.particles) {
+            // 物理法則を知らないNNをシミュレート (オイラー法)
+            // 誤差が蓄積しやすく、激しい動きでマフラーが伸びたり震えたりする
+            updateEuler() {
+                for (let p of this.particles) {
                     if (p.isPinned) continue;
-                    p.acc.copy(gravity);
+                    p.acc.copy(PARAMS.gravity);
                 }
-                // 2. 各点間の制約（伸び縮み）による力を計算して加速度に加える
-                for (const c of this.constraints) {
-                    const delta = new THREE.Vector3().subVectors(c.p2.pos, c.p1.pos);
-                    const dist = delta.length();
-                    if (dist === 0) continue;
-                    const diff = (dist - c.length) / dist; // 基準長からのズレ率
-                    const force = delta.multiplyScalar(diff * stiffness * dt); // ズレに戻そうとする力
+
+                // ばね拘束の計算
+                for (let c of this.constraints) {
+                    const diff = new THREE.Vector3().subVectors(c.p2.pos, c.p1.pos);
+                    const dist = diff.length() || 0.001;
+                    const error = (dist - c.target) / dist;
+                    const force = diff.multiplyScalar(error * PARAMS.stiffness);
                     if (!c.p1.isPinned) c.p1.acc.add(force);
                     if (!c.p2.isPinned) c.p2.acc.sub(force);
                 }
-                // 3. 加速度から速度を、速度から位置を更新する（誤差が蓄積する原因）
-                for (const p of this.particles) {
+
+                // 積分
+                for (let p of this.particles) {
                     if (p.isPinned) continue;
-                    p.vel.add(p.acc.clone().multiplyScalar(dt));
-                    p.pos.add(p.vel.clone().multiplyScalar(dt));
-                    if (p.pos.y < 0) p.pos.y = 0; // 床より下に行かないようにする
+                    p.vel.add(p.acc.multiplyScalar(PARAMS.dt));
+                    p.pos.add(p.vel.clone().multiplyScalar(PARAMS.dt));
+                    
+                    // 地面衝突
+                    if (p.pos.y < 0) {
+                        p.pos.y = 0;
+                        p.vel.y *= -0.2;
+                    }
                 }
             }
 
-            // HNNのシミュレーション（Verlet法）
-            // エネルギー保存則を学習したHNNの結果を模倣。非常に安定している。
-            updateHNN() {
-                // 1. 現在の位置と1フレーム前の位置から、慣性を考慮して次の位置を予測
-                for (const p of this.particles) {
+            // HNNをシミュレート (Verlet法 + 強力な拘束解決)
+            // エネルギー保存を前提とした構造のため、どんな動きでもマフラーの長さが一定に保たれる
+            updateVerlet() {
+                for (let p of this.particles) {
                     if (p.isPinned) continue;
-                    const vel = new THREE.Vector3().subVectors(p.pos, p.oldPos); // 擬似的な速度
-                    p.oldPos.copy(p.pos); // 現在の位置を1フレーム前の位置として保存
-                    p.pos.add(vel).add(gravity.clone().multiplyScalar(dt * dt)); // 次の位置を計算
+                    const vel = new THREE.Vector3().subVectors(p.pos, p.oldPos);
+                    p.oldPos.copy(p.pos);
+                    p.pos.add(vel).add(PARAMS.gravity.clone().multiplyScalar(PARAMS.dt * PARAMS.dt));
                 }
-                // 2. 制約を解決する（点の位置を直接修正して、正しい長さに保つ）
-                // この処理を数回繰り返すことで精度が上がる
-                for (let i = 0; i < 5; i++) {
-                    for (const c of this.constraints) {
-                        const delta = new THREE.Vector3().subVectors(c.p2.pos, c.p1.pos);
-                        const dist = delta.length();
-                        if (dist === 0) continue;
-                        const diff = (dist - c.length) / dist; // ズレ率
-                        const offset = delta.multiplyScalar(diff * 0.5); // 補正量
-                        if (!c.p1.isPinned) c.p1.pos.add(offset);
-                        if (!c.p2.isPinned) c.p2.pos.sub(offset);
+
+                // 拘束の解決 (繰り返し計算で長さを厳密に守る)
+                for (let step = 0; step < 8; step++) {
+                    for (let c of this.constraints) {
+                        const diff = new THREE.Vector3().subVectors(c.p2.pos, c.p1.pos);
+                        const dist = diff.length() || 0.001;
+                        const error = (c.target - dist) / dist;
+                        const offset = diff.multiplyScalar(error * 0.5);
+                        if (!c.p1.isPinned) c.p1.pos.sub(offset);
+                        if (!c.p2.isPinned) c.p2.pos.add(offset);
                     }
                 }
-                // 3. 床より下に行かないようにする
-                for (const p of this.particles) {
+
+                for (let p of this.particles) {
                     if (p.pos.y < 0) p.pos.y = 0;
                 }
             }
+
+            reset() {
+                const neckPos = this.character.position.clone().add(new THREE.Vector3(0, 2.8, 0.4));
+                for(let i=0; i<this.particles.length; i++) {
+                    this.particles[i].pos.set(neckPos.x, neckPos.y - i * PARAMS.length, neckPos.z);
+                    this.particles[i].oldPos.copy(this.particles[i].pos);
+                    this.particles[i].vel.set(0,0,0);
+                }
+            }
         }
 
-        // --- 初期化 ---
-        // デモ全体のセットアップを行う
+        /**
+         * シーンの初期設定
+         */
+        function setupScene(containerId) {
+            const container = document.getElementById(containerId);
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0f172a);
+            scene.fog = new THREE.Fog(0x0f172a, 10, 40);
+
+            const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(0, 4, 10);
+            camera.lookAt(0, 2, 0);
+
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            // 照明
+            const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambient);
+            const spot = new THREE.DirectionalLight(0xffffff, 0.8);
+            spot.position.set(5, 10, 5);
+            scene.add(spot);
+
+            // 床
+            const grid = new THREE.GridHelper(50, 50, 0x334155, 0x1e293b);
+            scene.add(grid);
+            const plane = new THREE.Mesh(
+                new THREE.PlaneGeometry(50, 50),
+                new THREE.MeshStandardMaterial({ color: 0x111827, side: THREE.DoubleSide })
+            );
+            plane.rotation.x = Math.PI / 2;
+            scene.add(plane);
+
+            return { scene, camera, renderer };
+        }
+
+        /**
+         * キャラクター（人形）の作成
+         */
+        function createMannequin(scene, color) {
+            const group = new THREE.Group();
+            
+            // 体
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.4, 0.4), new THREE.MeshStandardMaterial({ color }));
+            torso.position.y = 1.8;
+            group.add(torso);
+            
+            // 頭
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 16), new THREE.MeshStandardMaterial({ color }));
+            head.position.y = 2.9;
+            group.add(head);
+
+            // 足
+            const legR = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.1, 0.3), new THREE.MeshStandardMaterial({ color }));
+            legR.position.set(0.2, 0.55, 0);
+            group.add(legR);
+            const legL = legR.clone();
+            legL.position.x = -0.2;
+            group.add(legL);
+
+            scene.add(group);
+            return group;
+        }
+
+        /**
+         * システムリセット
+         */
+        window.resetSystems = function() {
+            nnChar.position.set(0, 0, 0);
+            hnnChar.position.set(0, 0, 0);
+            nnPhysics.reset();
+            hnnPhysics.reset();
+        };
+
+        /**
+         * メイン初期化
+         */
         function init() {
-            // 左画面（標準NN）のセットアップ
-            const nnSetup = init3D('nnContainer');
-            nnScene = nnSetup.scene;
-            nnCamera = nnSetup.camera;
-            nnRenderer = nnSetup.renderer;
-            nnChar = createCharacter(0xef4444); // 赤いキャラクター
-            nnScene.add(nnChar);
-            nnSystem = new PhysicsSystem('nn', nnChar);
-            nnScene.add(nnSystem.scarfLine);
+            const nnObj = setupScene('nnViewport');
+            nnScene = nnObj.scene; nnCamera = nnObj.camera; nnRenderer = nnObj.renderer;
+            
+            const hnnObj = setupScene('hnnViewport');
+            hnnScene = hnnObj.scene; hnnCamera = hnnObj.camera; hnnRenderer = hnnObj.renderer;
 
-            // 右画面（HNN）のセットアップ
-            const hnnSetup = init3D('hnnContainer');
-            hnnScene = hnnSetup.scene;
-            hnnCamera = hnnSetup.camera;
-            hnnRenderer = hnnSetup.renderer;
-            hnnChar = createCharacter(0x22c55e); // 緑のキャラクター
-            hnnScene.add(hnnChar);
-            hnnSystem = new PhysicsSystem('hnn', hnnChar);
-            hnnScene.add(hnnSystem.scarfLine);
+            nnChar = createMannequin(nnScene, 0xef4444);
+            hnnChar = createMannequin(hnnScene, 0x10b981);
 
-            // キーボードのイベントリスナーを設定
-            window.addEventListener('keydown', (e) => keyState[e.code] = true);
-            window.addEventListener('keyup', (e) => keyState[e.code] = false);
+            nnPhysics = new ScarfSystem('nn', nnChar, nnScene, 0xf87171);
+            hnnPhysics = new ScarfSystem('hnn', hnnChar, hnnScene, 0x34d399);
 
-            // アニメーションループを開始
+            window.addEventListener('keydown', e => keys[e.code] = true);
+            window.addEventListener('keyup', e => keys[e.code] = false);
+            window.addEventListener('resize', onResize);
+
             animate();
         }
 
-        // --- アニメーションループ ---
-        // 毎フレーム実行されるメインループ
+        function onResize() {
+            const nnCont = document.getElementById('nnViewport');
+            nnCamera.aspect = nnCont.clientWidth / nnCont.clientHeight;
+            nnCamera.updateProjectionMatrix();
+            nnRenderer.setSize(nnCont.clientWidth, nnCont.clientHeight);
+
+            const hnnCont = document.getElementById('hnnViewport');
+            hnnCamera.aspect = hnnCont.clientWidth / hnnCont.clientHeight;
+            hnnCamera.updateProjectionMatrix();
+            hnnRenderer.setSize(hnnCont.clientWidth, hnnCont.clientHeight);
+        }
+
+        /**
+         * ループ
+         */
         function animate() {
-            requestAnimationFrame(animate); // 次のフレームで再度この関数を呼び出す
+            requestAnimationFrame(animate);
 
-            // キャラクター操作
-            const moveSpeed = 5 * dt;
-            const moveDirection = new THREE.Vector3();
-            if (keyState['KeyW']) moveDirection.z -= 1;
-            if (keyState['KeyS']) moveDirection.z += 1;
-            if (keyState['KeyA']) moveDirection.x -= 1;
-            if (keyState['KeyD']) moveDirection.x += 1;
+            // 入力処理
+            const dir = new THREE.Vector3(0, 0, 0);
+            if (keys['KeyW']) dir.z -= 1;
+            if (keys['KeyS']) dir.z += 1;
+            if (keys['KeyA']) dir.x -= 1;
+            if (keys['KeyD']) dir.x += 1;
 
-            // 移動入力があればキャラクターを動かす
-            if (moveDirection.lengthSq() > 0) {
-                moveDirection.normalize().multiplyScalar(moveSpeed);
-                nnChar.position.add(moveDirection);
-                hnnChar.position.add(moveDirection);
+            if (dir.lengthSq() > 0) {
+                dir.normalize().multiplyScalar(PARAMS.moveSpeed * PARAMS.dt);
+                nnChar.position.add(dir);
+                hnnChar.position.add(dir);
+                
+                // カメラを追従
+                const camOffset = new THREE.Vector3(0, 4, 10);
+                nnCamera.position.copy(nnChar.position).add(camOffset);
+                nnCamera.lookAt(nnChar.position.clone().add(new THREE.Vector3(0, 2, 0)));
+                
+                hnnCamera.position.copy(hnnChar.position).add(camOffset);
+                hnnCamera.lookAt(hnnChar.position.clone().add(new THREE.Vector3(0, 2, 0)));
             }
-            
-            // 物理更新
-            nnSystem.update();
-            hnnSystem.update();
 
-            // レンダリング（描画）
+            // 物理更新
+            nnPhysics.update();
+            hnnPhysics.update();
+
+            // レンダリング
             nnRenderer.render(nnScene, nnCamera);
             hnnRenderer.render(hnnScene, hnnCamera);
         }
 
-        // ページの読み込みが完了したら初期化処理を実行
         init();
     </script>
 </body>
