@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HNN vs 従来型物理エンジン デモ</title>
+    <title>HNN vs 標準NN 3Dキャラクターデモ</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
@@ -19,244 +19,285 @@
 </head>
 <body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
 
-    <div class="w-full max-w-6xl mx-auto text-center mb-6">
-        <h1 class="text-3xl md:text-4xl font-bold text-cyan-400 mb-2">HNN vs. 従来型物理エンジン</h1>
-        <p class="text-gray-300">エネルギー保存の安定性を比較するインタラクティブデモ</p>
+    <div class="w-full max-w-6xl mx-auto text-center mb-4">
+        <h1 class="text-3xl md:text-4xl font-bold text-cyan-400 mb-2">3Dキャラクター物理デモ</h1>
+        <p class="text-gray-300">HNNと標準的なNNのマフラーの動きで安定性を比較</p>
     </div>
 
-    <div class="w-full max-w-6xl grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
-        <!-- 従来型エンジンのセクション -->
+    <div class="w-full max-w-6xl grid grid-cols-1 md:grid-cols-2 gap-8 mb-4">
+        <!-- 標準的なNNのセクション -->
         <div class="bg-gray-800 p-4 rounded-2xl shadow-lg border border-gray-700">
-            <h2 class="text-xl font-bold text-center mb-4 text-red-400">従来型物理エンジン (オイラー法)</h2>
-            <canvas id="eulerCanvas" class="w-full h-64 bg-gray-900 rounded-lg"></canvas>
-            <p class="text-sm text-center mt-2 text-gray-400">振り子のシミュレーション</p>
-            <canvas id="eulerEnergyCanvas" class="w-full h-32 mt-4 bg-gray-900 rounded-lg"></canvas>
-            <p class="text-sm text-center mt-2 text-gray-400">全エネルギーの推移グラフ</p>
+            <h2 class="text-xl font-bold text-center mb-2 text-red-400">標準的なNN (シミュレーション)</h2>
+            <div id="nnContainer" class="w-full h-80 bg-gray-900 rounded-lg relative"></div>
         </div>
 
         <!-- HNNベースのエンジンのセクション -->
         <div class="bg-gray-800 p-4 rounded-2xl shadow-lg border border-gray-700">
-            <h2 class="text-xl font-bold text-center mb-4 text-green-400">HNNベースの物理エンジン (シンプレクティック法)</h2>
-            <canvas id="symplecticCanvas" class="w-full h-64 bg-gray-900 rounded-lg"></canvas>
-            <p class="text-sm text-center mt-2 text-gray-400">振り子のシミュレーション</p>
-            <canvas id="symplecticEnergyCanvas" class="w-full h-32 mt-4 bg-gray-900 rounded-lg"></canvas>
-            <p class="text-sm text-center mt-2 text-gray-400">全エネルギーの推移グラフ</p>
+            <h2 class="text-xl font-bold text-center mb-2 text-green-400">HNNベース (物理法則を学習)</h2>
+            <div id="hnnContainer" class="w-full h-80 bg-gray-900 rounded-lg relative"></div>
         </div>
     </div>
     
     <div class="flex items-center space-x-4">
-        <button id="resetButton" class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-6 rounded-lg transition-all duration-300 shadow-lg transform hover:scale-105">
-            リセット
-        </button>
         <div class="relative">
-             <p id="infoText" class="text-gray-300 bg-gray-800/80 info-box p-4 rounded-lg border border-gray-700 max-w-md text-center">
-                左の振り子は徐々にエネルギーが増加し、動きが破綻します。右はエネルギーが保存され、安定した動きを続けます。
+             <p id="infoText" class="text-gray-300 bg-gray-800/80 info-box p-4 rounded-lg border border-gray-700 max-w-lg text-center">
+                <strong class="text-cyan-400">WASDキー</strong>でキャラクターを操作してください。<br>左のNNは物理法則を知らないため、誤差が蓄積しマフラーが破綻します。
             </p>
         </div>
     </div>
 
+    <!-- 3Dグラフィックスライブラリ Three.js を読み込む -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
         // --- 初期設定 ---
-        const eulerCanvas = document.getElementById('eulerCanvas');
-        const eulerCtx = eulerCanvas.getContext('2d');
-        const symplecticCanvas = document.getElementById('symplecticCanvas');
-        const symplecticCtx = symplecticCanvas.getContext('2d');
-        const eulerEnergyCanvas = document.getElementById('eulerEnergyCanvas');
-        const eulerEnergyCtx = eulerEnergyCanvas.getContext('2d');
-        const symplecticEnergyCanvas = document.getElementById('symplecticEnergyCanvas');
-        const symplecticEnergyCtx = symplecticEnergyCanvas.getContext('2d');
-        const resetButton = document.getElementById('resetButton');
-        const infoText = document.getElementById('infoText');
-
-        let animationFrameId;
-
-        // --- キャンバスの解像度設定 ---
-        function setupCanvas(canvas) {
-            const dpr = window.devicePixelRatio || 1;
-            const rect = canvas.getBoundingClientRect();
-            canvas.width = rect.width * dpr;
-            canvas.height = rect.height * dpr;
-            const ctx = canvas.getContext('2d');
-            ctx.scale(dpr, dpr);
-        }
-
-        [eulerCanvas, symplecticCanvas, eulerEnergyCanvas, symplecticEnergyCanvas].forEach(setupCanvas);
+        // 各シミュレーション用の変数を用意
+        let nnScene, nnCamera, nnRenderer, nnSystem, nnChar; // 標準NN用
+        let hnnScene, hnnCamera, hnnRenderer, hnnSystem, hnnChar; // HNN用
+        const keyState = {}; // キーボードの入力状態を保存するオブジェクト
 
         // --- 物理パラメータ ---
-        const g = 9.8; // 重力加速度
-        const m = 1.0; // 質量
-        const dt = 0.05; // 時間ステップ
+        const gravity = new THREE.Vector3(0, -10, 0); // 重力加速度
+        const dt = 0.016; // 1フレームあたりの時間ステップ (約60FPS)
+        const numParticles = 10; // マフラーを構成する点の数
+        const segmentLength = 0.5; // マフラーの各節の長さ
+        const stiffness = 200; // マフラーの硬さ（伸びにくさ）
 
-        let eulerPendulum, symplecticPendulum;
-        let eulerEnergyHistory, symplecticEnergyHistory;
-        let initialEnergy;
-
-        // --- 振り子クラスの定義 ---
-        class Pendulum {
-            constructor(length, theta, omega) {
-                this.length = length;
-                this.theta = theta; // 角度
-                this.omega = omega; // 角速度
-            }
-
-            getPotentialEnergy() {
-                return m * g * this.length * (1 - Math.cos(this.theta));
-            }
-
-            getKineticEnergy() {
-                return 0.5 * m * (this.length * this.omega) ** 2;
-            }
-
-            getTotalEnergy() {
-                return this.getPotentialEnergy() + this.getKineticEnergy();
-            }
-        }
-
-        // 従来法（オイラー法）
-        class EulerPendulum extends Pendulum {
-            update() {
-                const alpha = -(g / this.length) * Math.sin(this.theta); // 角加速度
-                // ★修正点★
-                // 位置を更新してから速度を更新する。これにより誤差が蓄積し、エネルギーが増加する。
-                this.theta += this.omega * dt;
-                this.omega += alpha * dt;
-            }
-        }
-
-        // HNNの原理（シンプレクティック法 / Leapfrog法）
-        class SymplecticPendulum extends Pendulum {
-            update() {
-                const alpha = -(g / this.length) * Math.sin(this.theta);
-                // 速度を更新してから、その新しい速度を使って位置を更新する。これによりエネルギーが保存される。
-                this.omega += alpha * dt;
-                this.theta += this.omega * dt;
-            }
-        }
-        
-        // --- 描画関数 ---
-        function drawPendulum(ctx, pendulum) {
-            const width = ctx.canvas.clientWidth;
-            const height = ctx.canvas.clientHeight;
-            const pivotX = width / 2;
-            const pivotY = 20;
+        // --- 3Dシーン初期化関数 ---
+        // 指定されたIDのDOM要素に3Dシーンを作成する
+        function init3D(containerId) {
+            const container = document.getElementById(containerId);
             
-            const bobX = pivotX + pendulum.length * Math.sin(pendulum.theta);
-            const bobY = pivotY + pendulum.length * Math.cos(pendulum.theta);
+            // シーン: 3Dオブジェクトやライトを配置する空間
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111827); // 背景色
 
-            // 支点
-            ctx.beginPath();
-            ctx.arc(pivotX, pivotY, 5, 0, Math.PI * 2);
-            ctx.fillStyle = '#9ca3af';
-            ctx.fill();
+            // カメラ: 3D空間をどの視点から見るかを決める
+            const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(0, 7, 12); // カメラの位置
+            camera.lookAt(0, 2, 0); // カメラの注視点
 
-            // 糸
-            ctx.beginPath();
-            ctx.moveTo(pivotX, pivotY);
-            ctx.lineTo(bobX, bobY);
-            ctx.strokeStyle = '#6b7280';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            // レンダラー: シーンとカメラの情報をもとに、実際に画面に描画する
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight); // 描画サイズ
+            renderer.setPixelRatio(window.devicePixelRatio); // 高解像度ディスプレイに対応
+            container.appendChild(renderer.domElement); // HTMLにcanvas要素を追加
 
-            // おもり
-            ctx.beginPath();
-            ctx.arc(bobX, bobY, 15, 0, Math.PI * 2);
-            ctx.fillStyle = '#38bdf8';
-            ctx.fill();
-            ctx.strokeStyle = '#0ea5e9';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            // ライト: 物体を照らすための光源
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // 全体を均一に照らす光
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); // 特定の方向から照らす平行光
+            directionalLight.position.set(5, 10, 7.5);
+            scene.add(directionalLight);
+
+            // 床: キャラクターが立つ地面
+            const ground = new THREE.Mesh(
+                new THREE.PlaneGeometry(50, 50), // 形状 (50x50の平面)
+                new THREE.MeshStandardMaterial({ color: 0x374151 }) // 材質 (色など)
+            );
+            ground.rotation.x = -Math.PI / 2; // X軸を中心に90度回転させて水平にする
+            scene.add(ground);
+
+            // 作成した3点セットを返す
+            return { scene, camera, renderer };
         }
 
-        function drawEnergyGraph(ctx, history, initial, color) {
-            const width = ctx.canvas.clientWidth;
-            const height = ctx.canvas.clientHeight;
-            const maxHistory = Math.floor(width / 2);
+        // --- キャラクター作成 ---
+        // 簡単な人型モデルを作成する
+        function createCharacter(color) {
+            const group = new THREE.Group(); // 複数のオブジェクトをまとめるためのグループ
+            // 頭
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 32, 32), new THREE.MeshStandardMaterial({ color }));
+            head.position.y = 3.5;
+            // 体
+            const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1.5, 0.5), new THREE.MeshStandardMaterial({ color }));
+            body.position.y = 2.25;
+            group.add(head);
+            group.add(body);
+            return group;
+        }
 
-            if (history.length > maxHistory) {
-                history.shift();
+        // --- 物理オブジェクト ---
+        // マフラーを構成する1つ1つの点を表現するクラス
+        class Particle {
+            constructor(pos, isPinned = false) {
+                this.pos = pos.clone(); // 現在の位置
+                this.oldPos = pos.clone(); // 1フレーム前の位置 (Verlet法で使用)
+                this.vel = new THREE.Vector3(); // 速度 (オイラー法で使用)
+                this.acc = new THREE.Vector3(); // 加速度 (オイラー法で使用)
+                this.isPinned = isPinned; // 固定点かどうか (マフラーの付け根など)
+                this.mass = 0.1; // 質量
             }
+        }
 
-            ctx.clearRect(0, 0, width, height);
-            
-            // エネルギーの変動範囲を計算
-            const energyRange = initial * 0.5;
-            const minY = initial - energyRange;
-            const maxY = initial + energyRange;
-
-            ctx.beginPath();
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2;
-
-            history.forEach((energy, i) => {
-                const x = (i / (maxHistory - 1)) * width;
-                const y = height - ((energy - minY) / (maxY - minY)) * height;
-                if (i === 0) {
-                    ctx.moveTo(x, y);
-                } else {
-                    ctx.lineTo(x, y);
+        // マフラー全体の物理演算を管理するクラス
+        class PhysicsSystem {
+            constructor(type, character) {
+                this.type = type; // 計算方法の種類 ('nn' or 'hnn')
+                this.character = character; // 追従対象のキャラクター
+                this.particles = []; // Particleオブジェクトの配列
+                this.constraints = []; // Particle間の接続情報（制約）
+                
+                // マフラーの線の色をタイプによって変える
+                const scarfMaterial = new THREE.LineBasicMaterial({ color: this.type === 'nn' ? 0xf87171 : 0x4ade80, linewidth: 5 });
+                this.scarfLine = new THREE.Line(new THREE.BufferGeometry(), scarfMaterial);
+                
+                // マフラーの初期形状を生成
+                const startPos = new THREE.Vector3(0, 3, 0.3); // 付け根の位置
+                for (let i = 0; i < numParticles; i++) {
+                    // 点をまっすぐ下に配置していく
+                    const pos = startPos.clone().add(new THREE.Vector3(0, -i * segmentLength, 0));
+                    // 最初の点(i=0)を固定点にする
+                    const particle = new Particle(pos, i === 0);
+                    this.particles.push(particle);
+                    // 2つ目以降の点で、1つ前の点との間に制約を作成
+                    if (i > 0) {
+                        this.constraints.push({ p1: this.particles[i-1], p2: this.particles[i], length: segmentLength });
+                    }
                 }
-            });
-            ctx.stroke();
-            
-            // 基準線
-            const baseY = height - ((initial - minY) / (maxY - minY)) * height;
-            ctx.beginPath();
-            ctx.moveTo(0, baseY);
-            ctx.lineTo(width, baseY);
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-            ctx.setLineDash([5, 5]);
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            ctx.setLineDash([]);
+                
+                // 描画用の線の頂点データを準備
+                const positions = new Float32Array(numParticles * 3);
+                this.scarfLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            }
+
+            // 毎フレーム呼び出される更新処理
+            update() {
+                // 先頭の固定点をキャラクターの首元に追従させる
+                this.particles[0].pos.copy(this.character.position).add(new THREE.Vector3(0, 3, 0.3));
+                
+                // タイプに応じて計算方法を切り替える
+                if (this.type === 'nn') this.updateNN();
+                else this.updateHNN();
+
+                // 計算結果を線のジオメトリに反映させる
+                const positions = this.scarfLine.geometry.attributes.position.array;
+                for (let i = 0; i < numParticles; i++) {
+                    positions[i * 3] = this.particles[i].pos.x;
+                    positions[i * 3 + 1] = this.particles[i].pos.y;
+                    positions[i * 3 + 2] = this.particles[i].pos.z;
+                }
+                this.scarfLine.geometry.attributes.position.needsUpdate = true; // Three.jsにジオメトリの更新を通知
+            }
+
+            // 標準NNのシミュレーション（オイラー法）
+            // 物理法則を知らないNNが動きを予測した結果を模倣。誤差が蓄積しやすい。
+            updateNN() {
+                // 1. 各点に重力を適用
+                for (const p of this.particles) {
+                    if (p.isPinned) continue;
+                    p.acc.copy(gravity);
+                }
+                // 2. 各点間の制約（伸び縮み）による力を計算して加速度に加える
+                for (const c of this.constraints) {
+                    const delta = new THREE.Vector3().subVectors(c.p2.pos, c.p1.pos);
+                    const dist = delta.length();
+                    if (dist === 0) continue;
+                    const diff = (dist - c.length) / dist; // 基準長からのズレ率
+                    const force = delta.multiplyScalar(diff * stiffness * dt); // ズレに戻そうとする力
+                    if (!c.p1.isPinned) c.p1.acc.add(force);
+                    if (!c.p2.isPinned) c.p2.acc.sub(force);
+                }
+                // 3. 加速度から速度を、速度から位置を更新する（誤差が蓄積する原因）
+                for (const p of this.particles) {
+                    if (p.isPinned) continue;
+                    p.vel.add(p.acc.clone().multiplyScalar(dt));
+                    p.pos.add(p.vel.clone().multiplyScalar(dt));
+                    if (p.pos.y < 0) p.pos.y = 0; // 床より下に行かないようにする
+                }
+            }
+
+            // HNNのシミュレーション（Verlet法）
+            // エネルギー保存則を学習したHNNの結果を模倣。非常に安定している。
+            updateHNN() {
+                // 1. 現在の位置と1フレーム前の位置から、慣性を考慮して次の位置を予測
+                for (const p of this.particles) {
+                    if (p.isPinned) continue;
+                    const vel = new THREE.Vector3().subVectors(p.pos, p.oldPos); // 擬似的な速度
+                    p.oldPos.copy(p.pos); // 現在の位置を1フレーム前の位置として保存
+                    p.pos.add(vel).add(gravity.clone().multiplyScalar(dt * dt)); // 次の位置を計算
+                }
+                // 2. 制約を解決する（点の位置を直接修正して、正しい長さに保つ）
+                // この処理を数回繰り返すことで精度が上がる
+                for (let i = 0; i < 5; i++) {
+                    for (const c of this.constraints) {
+                        const delta = new THREE.Vector3().subVectors(c.p2.pos, c.p1.pos);
+                        const dist = delta.length();
+                        if (dist === 0) continue;
+                        const diff = (dist - c.length) / dist; // ズレ率
+                        const offset = delta.multiplyScalar(diff * 0.5); // 補正量
+                        if (!c.p1.isPinned) c.p1.pos.add(offset);
+                        if (!c.p2.isPinned) c.p2.pos.sub(offset);
+                    }
+                }
+                // 3. 床より下に行かないようにする
+                for (const p of this.particles) {
+                    if (p.pos.y < 0) p.pos.y = 0;
+                }
+            }
         }
 
-        // --- 初期化関数 ---
+        // --- 初期化 ---
+        // デモ全体のセットアップを行う
         function init() {
-            if (animationFrameId) {
-                cancelAnimationFrame(animationFrameId);
-            }
-            
-            const length = Math.min(eulerCanvas.clientHeight, eulerCanvas.clientWidth) * 0.6;
-            const initialTheta = Math.PI / 2; // 90度からスタート
+            // 左画面（標準NN）のセットアップ
+            const nnSetup = init3D('nnContainer');
+            nnScene = nnSetup.scene;
+            nnCamera = nnSetup.camera;
+            nnRenderer = nnSetup.renderer;
+            nnChar = createCharacter(0xef4444); // 赤いキャラクター
+            nnScene.add(nnChar);
+            nnSystem = new PhysicsSystem('nn', nnChar);
+            nnScene.add(nnSystem.scarfLine);
 
-            eulerPendulum = new EulerPendulum(length, initialTheta, 0);
-            symplecticPendulum = new SymplecticPendulum(length, initialTheta, 0);
+            // 右画面（HNN）のセットアップ
+            const hnnSetup = init3D('hnnContainer');
+            hnnScene = hnnSetup.scene;
+            hnnCamera = hnnSetup.camera;
+            hnnRenderer = hnnSetup.renderer;
+            hnnChar = createCharacter(0x22c55e); // 緑のキャラクター
+            hnnScene.add(hnnChar);
+            hnnSystem = new PhysicsSystem('hnn', hnnChar);
+            hnnScene.add(hnnSystem.scarfLine);
 
-            initialEnergy = eulerPendulum.getTotalEnergy();
-            eulerEnergyHistory = [initialEnergy];
-            symplecticEnergyHistory = [initialEnergy];
-            
+            // キーボードのイベントリスナーを設定
+            window.addEventListener('keydown', (e) => keyState[e.code] = true);
+            window.addEventListener('keyup', (e) => keyState[e.code] = false);
+
+            // アニメーションループを開始
             animate();
         }
 
         // --- アニメーションループ ---
+        // 毎フレーム実行されるメインループ
         function animate() {
-            // オイラー法
-            eulerPendulum.update();
-            eulerEnergyHistory.push(eulerPendulum.getTotalEnergy());
-            eulerCtx.clearRect(0, 0, eulerCanvas.clientWidth, eulerCanvas.clientHeight);
-            drawPendulum(eulerCtx, eulerPendulum);
-            drawEnergyGraph(eulerEnergyCtx, eulerEnergyHistory, initialEnergy, '#f87171');
+            requestAnimationFrame(animate); // 次のフレームで再度この関数を呼び出す
 
-            // シンプレクティック法
-            symplecticPendulum.update();
-            symplecticEnergyHistory.push(symplecticPendulum.getTotalEnergy());
-            symplecticCtx.clearRect(0, 0, symplecticCanvas.clientWidth, symplecticCanvas.clientHeight);
-            drawPendulum(symplecticCtx, symplecticPendulum);
-            drawEnergyGraph(symplecticEnergyCtx, symplecticEnergyHistory, initialEnergy, '#4ade80');
+            // キャラクター操作
+            const moveSpeed = 5 * dt;
+            const moveDirection = new THREE.Vector3();
+            if (keyState['KeyW']) moveDirection.z -= 1;
+            if (keyState['KeyS']) moveDirection.z += 1;
+            if (keyState['KeyA']) moveDirection.x -= 1;
+            if (keyState['KeyD']) moveDirection.x += 1;
 
-            animationFrameId = requestAnimationFrame(animate);
+            // 移動入力があればキャラクターを動かす
+            if (moveDirection.lengthSq() > 0) {
+                moveDirection.normalize().multiplyScalar(moveSpeed);
+                nnChar.position.add(moveDirection);
+                hnnChar.position.add(moveDirection);
+            }
+            
+            // 物理更新
+            nnSystem.update();
+            hnnSystem.update();
+
+            // レンダリング（描画）
+            nnRenderer.render(nnScene, nnCamera);
+            hnnRenderer.render(hnnScene, hnnCamera);
         }
 
-        // --- イベントリスナー ---
-        resetButton.addEventListener('click', init);
-        window.addEventListener('resize', () => {
-             [eulerCanvas, symplecticCanvas, eulerEnergyCanvas, symplecticEnergyCanvas].forEach(setupCanvas);
-             init();
-        });
-
-        // --- 初期実行 ---
-        window.onload = init;
+        // ページの読み込みが完了したら初期化処理を実行
+        init();
     </script>
 </body>
 </html>
