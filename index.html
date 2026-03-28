@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HNN vs 従来型物理エンジン デモ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        .info-box {
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-6xl mx-auto text-center mb-6">
+        <h1 class="text-3xl md:text-4xl font-bold text-cyan-400 mb-2">HNN vs. 従来型物理エンジン</h1>
+        <p class="text-gray-300">エネルギー保存の安定性を比較するインタラクティブデモ</p>
+    </div>
+
+    <div class="w-full max-w-6xl grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
+        <!-- 従来型エンジンのセクション -->
+        <div class="bg-gray-800 p-4 rounded-2xl shadow-lg border border-gray-700">
+            <h2 class="text-xl font-bold text-center mb-4 text-red-400">従来型物理エンジン (オイラー法)</h2>
+            <canvas id="eulerCanvas" class="w-full h-64 bg-gray-900 rounded-lg"></canvas>
+            <p class="text-sm text-center mt-2 text-gray-400">振り子のシミュレーション</p>
+            <canvas id="eulerEnergyCanvas" class="w-full h-32 mt-4 bg-gray-900 rounded-lg"></canvas>
+            <p class="text-sm text-center mt-2 text-gray-400">全エネルギーの推移グラフ</p>
+        </div>
+
+        <!-- HNNベースのエンジンのセクション -->
+        <div class="bg-gray-800 p-4 rounded-2xl shadow-lg border border-gray-700">
+            <h2 class="text-xl font-bold text-center mb-4 text-green-400">HNNベースの物理エンジン (シンプレクティック法)</h2>
+            <canvas id="symplecticCanvas" class="w-full h-64 bg-gray-900 rounded-lg"></canvas>
+            <p class="text-sm text-center mt-2 text-gray-400">振り子のシミュレーション</p>
+            <canvas id="symplecticEnergyCanvas" class="w-full h-32 mt-4 bg-gray-900 rounded-lg"></canvas>
+            <p class="text-sm text-center mt-2 text-gray-400">全エネルギーの推移グラフ</p>
+        </div>
+    </div>
+    
+    <div class="flex items-center space-x-4">
+        <button id="resetButton" class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-6 rounded-lg transition-all duration-300 shadow-lg transform hover:scale-105">
+            リセット
+        </button>
+        <div class="relative">
+             <p id="infoText" class="text-gray-300 bg-gray-800/80 info-box p-4 rounded-lg border border-gray-700 max-w-md text-center">
+                左の振り子は徐々にエネルギーが増加し、動きが破綻します。右はエネルギーが保存され、安定した動きを続けます。
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // --- 初期設定 ---
+        const eulerCanvas = document.getElementById('eulerCanvas');
+        const eulerCtx = eulerCanvas.getContext('2d');
+        const symplecticCanvas = document.getElementById('symplecticCanvas');
+        const symplecticCtx = symplecticCanvas.getContext('2d');
+        const eulerEnergyCanvas = document.getElementById('eulerEnergyCanvas');
+        const eulerEnergyCtx = eulerEnergyCanvas.getContext('2d');
+        const symplecticEnergyCanvas = document.getElementById('symplecticEnergyCanvas');
+        const symplecticEnergyCtx = symplecticEnergyCanvas.getContext('2d');
+        const resetButton = document.getElementById('resetButton');
+        const infoText = document.getElementById('infoText');
+
+        let animationFrameId;
+
+        // --- キャンバスの解像度設定 ---
+        function setupCanvas(canvas) {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+        }
+
+        [eulerCanvas, symplecticCanvas, eulerEnergyCanvas, symplecticEnergyCanvas].forEach(setupCanvas);
+
+        // --- 物理パラメータ ---
+        const g = 9.8; // 重力加速度
+        const m = 1.0; // 質量
+        const dt = 0.05; // 時間ステップ
+
+        let eulerPendulum, symplecticPendulum;
+        let eulerEnergyHistory, symplecticEnergyHistory;
+        let initialEnergy;
+
+        // --- 振り子クラスの定義 ---
+        class Pendulum {
+            constructor(length, theta, omega) {
+                this.length = length;
+                this.theta = theta; // 角度
+                this.omega = omega; // 角速度
+            }
+
+            getPotentialEnergy() {
+                return m * g * this.length * (1 - Math.cos(this.theta));
+            }
+
+            getKineticEnergy() {
+                return 0.5 * m * (this.length * this.omega) ** 2;
+            }
+
+            getTotalEnergy() {
+                return this.getPotentialEnergy() + this.getKineticEnergy();
+            }
+        }
+
+        // 従来法（オイラー法）
+        class EulerPendulum extends Pendulum {
+            update() {
+                const alpha = -(g / this.length) * Math.sin(this.theta); // 角加速度
+                // ★修正点★
+                // 位置を更新してから速度を更新する。これにより誤差が蓄積し、エネルギーが増加する。
+                this.theta += this.omega * dt;
+                this.omega += alpha * dt;
+            }
+        }
+
+        // HNNの原理（シンプレクティック法 / Leapfrog法）
+        class SymplecticPendulum extends Pendulum {
+            update() {
+                const alpha = -(g / this.length) * Math.sin(this.theta);
+                // 速度を更新してから、その新しい速度を使って位置を更新する。これによりエネルギーが保存される。
+                this.omega += alpha * dt;
+                this.theta += this.omega * dt;
+            }
+        }
+        
+        // --- 描画関数 ---
+        function drawPendulum(ctx, pendulum) {
+            const width = ctx.canvas.clientWidth;
+            const height = ctx.canvas.clientHeight;
+            const pivotX = width / 2;
+            const pivotY = 20;
+            
+            const bobX = pivotX + pendulum.length * Math.sin(pendulum.theta);
+            const bobY = pivotY + pendulum.length * Math.cos(pendulum.theta);
+
+            // 支点
+            ctx.beginPath();
+            ctx.arc(pivotX, pivotY, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#9ca3af';
+            ctx.fill();
+
+            // 糸
+            ctx.beginPath();
+            ctx.moveTo(pivotX, pivotY);
+            ctx.lineTo(bobX, bobY);
+            ctx.strokeStyle = '#6b7280';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // おもり
+            ctx.beginPath();
+            ctx.arc(bobX, bobY, 15, 0, Math.PI * 2);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fill();
+            ctx.strokeStyle = '#0ea5e9';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        function drawEnergyGraph(ctx, history, initial, color) {
+            const width = ctx.canvas.clientWidth;
+            const height = ctx.canvas.clientHeight;
+            const maxHistory = Math.floor(width / 2);
+
+            if (history.length > maxHistory) {
+                history.shift();
+            }
+
+            ctx.clearRect(0, 0, width, height);
+            
+            // エネルギーの変動範囲を計算
+            const energyRange = initial * 0.5;
+            const minY = initial - energyRange;
+            const maxY = initial + energyRange;
+
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+
+            history.forEach((energy, i) => {
+                const x = (i / (maxHistory - 1)) * width;
+                const y = height - ((energy - minY) / (maxY - minY)) * height;
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            });
+            ctx.stroke();
+            
+            // 基準線
+            const baseY = height - ((initial - minY) / (maxY - minY)) * height;
+            ctx.beginPath();
+            ctx.moveTo(0, baseY);
+            ctx.lineTo(width, baseY);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.setLineDash([5, 5]);
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // --- 初期化関数 ---
+        function init() {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            
+            const length = Math.min(eulerCanvas.clientHeight, eulerCanvas.clientWidth) * 0.6;
+            const initialTheta = Math.PI / 2; // 90度からスタート
+
+            eulerPendulum = new EulerPendulum(length, initialTheta, 0);
+            symplecticPendulum = new SymplecticPendulum(length, initialTheta, 0);
+
+            initialEnergy = eulerPendulum.getTotalEnergy();
+            eulerEnergyHistory = [initialEnergy];
+            symplecticEnergyHistory = [initialEnergy];
+            
+            animate();
+        }
+
+        // --- アニメーションループ ---
+        function animate() {
+            // オイラー法
+            eulerPendulum.update();
+            eulerEnergyHistory.push(eulerPendulum.getTotalEnergy());
+            eulerCtx.clearRect(0, 0, eulerCanvas.clientWidth, eulerCanvas.clientHeight);
+            drawPendulum(eulerCtx, eulerPendulum);
+            drawEnergyGraph(eulerEnergyCtx, eulerEnergyHistory, initialEnergy, '#f87171');
+
+            // シンプレクティック法
+            symplecticPendulum.update();
+            symplecticEnergyHistory.push(symplecticPendulum.getTotalEnergy());
+            symplecticCtx.clearRect(0, 0, symplecticCanvas.clientWidth, symplecticCanvas.clientHeight);
+            drawPendulum(symplecticCtx, symplecticPendulum);
+            drawEnergyGraph(symplecticEnergyCtx, symplecticEnergyHistory, initialEnergy, '#4ade80');
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        // --- イベントリスナー ---
+        resetButton.addEventListener('click', init);
+        window.addEventListener('resize', () => {
+             [eulerCanvas, symplecticCanvas, eulerEnergyCanvas, symplecticEnergyCanvas].forEach(setupCanvas);
+             init();
+        });
+
+        // --- 初期実行 ---
+        window.onload = init;
+    </script>
+</body>
+</html>
